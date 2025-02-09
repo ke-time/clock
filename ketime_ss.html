@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ke Time Display</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            font-size: 1.5em;
+        }
+        h2 {
+            font-size: 1.5em;
+            text-decoration: underline;
+            text-decoration-color: green;
+        }
+        .ke-time {
+            margin: 0;
+            font-family: "Courier New", Courier, monospace;
+            font-size: 2em;
+            font-weight: bold;
+        }
+        .ke-fraction {
+            font-size: 0.6em;
+        }
+        .ke-detailed {
+            margin: 5px;
+            font-family: "Courier New", Courier, monospace;
+            font-size: 1.9em;
+        }
+        .ke-small {
+            font-size: 0.6em;
+        }
+        .ke-legend {
+            font-size: 0.75em;
+            margin: 0;
+        }
+        .ke-suntimes {
+            font-size: 0.65em;
+            margin: 0;
+			color: orange;
+        }
+        .local-time-box {
+            display: inline-block;
+            border: 2px solid blue;
+            padding: 10px;
+            margin: 10px;
+            border-radius: 15px;
+        }
+        canvas {
+            margin-top: 10px;
+            background-color: white;
+            width: 320px;
+            height: 320px;
+        }
+    </style>
+    <script>
+        let sunriseKe = null;
+        let sunsetKe = null;
+        
+        function calculateKeTimeFromClock(hour, minute, second) {
+            const totalSeconds = (hour * 3600) + (minute * 60) + second;
+            const keStartSeconds = (3 * 3600) + (36 * 60); // 03:36:00 in seconds
+            let elapsedSeconds = totalSeconds - keStartSeconds;
+            if (elapsedSeconds < 0) elapsedSeconds += 86400;
+            
+            return (elapsedSeconds / 86400) * 100;
+        }
+        
+        function calculateKeTime() {
+            const now = new Date();
+            return calculateKeTimeFromClock(now.getHours(), now.getMinutes(), now.getSeconds());
+        }
+        
+        function updateKeTime() {
+            const kePercentage = calculateKeTime();
+            const keWhole = Math.floor(kePercentage);
+            let keShorts = Math.floor((kePercentage - keWhole) * 16);
+            let keSeconds = Math.floor(((kePercentage * 864) % 54));
+            
+            keShorts = keShorts < 10 ? "0" + keShorts : keShorts;
+            keSeconds = keSeconds < 10 ? "0" + keSeconds : keSeconds;
+            
+            document.getElementById("localKeTimePercentage").innerHTML = `${kePercentage.toFixed(2)}%`;
+            document.getElementById("localKeTimeDetailed").innerHTML = `${keWhole} ke<br/><span class="ke-small">${keShorts} shm ${keSeconds} sec</span>`;
+            drawKeChart(kePercentage);
+        }
+        
+        function fetchSunriseSunset() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(position => {
+                    const lat = position.coords.latitude;
+                    const lon = position.coords.longitude;
+                    
+                    fetch(`https://api.sunrise-sunset.org/json?lat=${lat}&lng=${lon}&formatted=0`)
+                        .then(response => response.json())
+                        .then(data => {
+                            sunriseKe = calculateKeTimeFromClock(new Date(data.results.sunrise).getUTCHours(), new Date(data.results.sunrise).getUTCMinutes(), 0);
+                            sunsetKe = calculateKeTimeFromClock(new Date(data.results.sunset).getUTCHours(), new Date(data.results.sunset).getUTCMinutes(), 0);
+                            
+                            document.getElementById("sunrise").textContent = `Sunrise: ${sunriseKe.toFixed(2)}% Ke`;
+                            document.getElementById("sunset").textContent = `Sunset: ${sunsetKe.toFixed(2)}% Ke`;
+                            drawKeChart(kePercentage);
+                        })
+                        .catch(error => console.error("Error fetching sunrise/sunset times:", error));
+                });
+            }
+        }
+        
+        function drawKeChart(percentage) {
+            const canvas = document.getElementById("keChart");
+            const ctx = canvas.getContext("2d");
+            const centerX = canvas.width / 2;
+            const centerY = canvas.height / 2;
+            const radius = 120;
+            
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            ctx.fillStyle = "green";
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            ctx.fillStyle = "blue";
+            ctx.beginPath();
+            ctx.moveTo(centerX, centerY);
+            ctx.arc(centerX, centerY, radius, -Math.PI / 2, (percentage / 100) * 2 * Math.PI - Math.PI / 2);
+            ctx.lineTo(centerX, centerY);
+            ctx.fill();
+            
+            // Labels and lines for markers
+            const markers = [
+                { value: 0, label: "00%" },
+                { value: 25, label: "25%" },
+                { value: 50, label: "50%" },
+                { value: 75, label: "75%" },
+                { value: 35, label: "Midday", color: "yellow" },
+                { value: 85, label: "Midnight", color: "yellow" },
+                { value: sunriseKe, label: "Sunrise", color: "orange" },
+                { value: sunsetKe, label: "Sunset", color: "orange" }
+            ];
+            
+            ctx.font = "14px Arial";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillStyle = "black";
+            
+            markers.forEach(marker => {
+                if (marker.value !== null) {
+                    const angle = (marker.value / 100) * 2 * Math.PI - Math.PI / 2;
+                    const x = centerX + (radius + 15) * Math.cos(angle);
+                    const y = centerY + (radius + 15) * Math.sin(angle);
+                    ctx.fillText(marker.label, x, y);
+                    if (marker.color) {
+                        ctx.strokeStyle = marker.color;
+                        ctx.lineWidth = 2;
+                        ctx.beginPath();
+                        ctx.moveTo(centerX, centerY);
+                        ctx.lineTo(centerX + radius * Math.cos(angle), centerY + radius * Math.sin(angle));
+                        ctx.stroke();
+                    }
+                }
+            });
+        }
+        
+        setInterval(updateKeTime, 100);
+        window.onload = function() {
+            updateKeTime();
+            fetchSunriseSunset();
+        };
+    </script>
+</head>
+<body>
+    <div class="local-time-box">
+        <h2>LOCAL KE TIME</h2>
+        <p class="ke-time"><span id="localKeTimePercentage"></span></p>
+        <hr/>
+        <p class="ke-detailed"><span id="localKeTimeDetailed"></span><br/>
+        <canvas id="keChart" width="320" height="320"></canvas></p>
+		<p class="ke-legend"><span style="color:blue;">%Day Elapsed</span> / <span style="color:green">%Day Remaining</span></p>
+		<hr/>
+		<p class="ke-suntimes"><span id="sunrise">[loading]</span>, <span id="sunset">[loading]</span></p>
+    </div>
+	
+	<p><strong>What is this?</strong></p>
+    
+    <p>
+        Ke Time divides the day into 100 equal parts, each called a ke.
+        Each ke contains 16 short-minutes (shm), and each short-minute has 54 seconds.
+        This system allows for an intuitive percentage-based way to track the progress of the day.
+    </p>
+    
+    <p>
+        Midday is defined as 35 ke, meaning that the ke day begins at 03:36:00 (3:36 AM) on a traditional clock.
+        This ensures that most people experience their full day within a single ke date (only a tiny minority go
+		to bed after 03:36 or wake up before this time).
+    </p>
+    
+    <p>
+        The term "ke" is derived from an ancient Chinese time measurement that divided the day into 100 parts.
+        However, unlike historical Chinese timekeeping, Ke Time uses standard SI seconds, ensuring consistency and precision.
+    </p>
+    
+    <p>
+        Ke Time provides an easy way to measure the progress of the day as a percentage,
+        which can help with personal scheduling and productivity.
+        Since it is based on existing time zones, local Ke time aligns with traditional clocks while offering
+        a more intuitive way to track time.
+    </p>
+</body>
+</html>
